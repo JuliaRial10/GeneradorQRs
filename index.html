@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Generador de QR estáticos</title>
+<style>
+:root {
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  --bg: #f6f5f2;
+  --surface: #ffffff;
+  --text: #1c1b1a;
+  --muted: #6a6862;
+  --border: #dedbd3;
+  --accent: #1f4fd8;
+  --accent-text: #ffffff;
+  --ok-bg: #e5f4e9; --ok-text: #14532d;
+  --warn-bg: #fdf1d8; --warn-text: #7a4b00;
+  --err-bg: #fbe4e4; --err-text: #8a1c1c;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161615; --surface: #21211f; --text: #efede8; --muted: #a09d95; --border: #3a3935;
+    --accent: #7c9bff; --accent-text: #0e1220;
+    --ok-bg: #16301f; --ok-text: #a6e3b8;
+    --warn-bg: #3a2c10; --warn-text: #f2cd84;
+    --err-bg: #3d1a1a; --err-text: #f4b1b1;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #161615; --surface: #21211f; --text: #efede8; --muted: #a09d95; --border: #3a3935;
+  --accent: #7c9bff; --accent-text: #0e1220;
+  --ok-bg: #16301f; --ok-text: #a6e3b8;
+  --warn-bg: #3a2c10; --warn-text: #f2cd84;
+  --err-bg: #3d1a1a; --err-text: #f4b1b1;
+  color-scheme: dark;
+}
+html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+}
+.wrap { max-width: 980px; margin: 0 auto; padding: 28px 18px 56px; }
+h1 { font-size: 1.6rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+.sub { color: var(--muted); margin: 0 0 22px; }
+.grid { display: grid; grid-template-columns: 1fr 360px; gap: 20px; align-items: start; }
+@media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+.field { margin-bottom: 16px; }
+label, .lbl { display: block; font-weight: 600; font-size: .92rem; margin-bottom: 6px; }
+.hint { color: var(--muted); font-size: .82rem; margin-top: 5px; }
+input[type=text], input[type=url], input[type=number], select {
+  width: 100%; padding: 10px 12px; font: inherit; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 9px;
+}
+input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.colors { display: flex; gap: 10px; align-items: center; }
+input[type=color] { width: 46px; height: 40px; padding: 2px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); cursor: pointer; }
+.seg { display: flex; flex-wrap: wrap; gap: 8px; }
+.seg label { margin: 0; font-weight: 500; display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); cursor: pointer; }
+.seg input { accent-color: var(--accent); }
+.seg label:has(input:checked) { border-color: var(--accent); }
+.msgs { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.msg { padding: 9px 12px; border-radius: 9px; font-size: .88rem; }
+.msg.err { background: var(--err-bg); color: var(--err-text); }
+.msg.warn { background: var(--warn-bg); color: var(--warn-text); }
+.msg.ok { background: var(--ok-bg); color: var(--ok-text); }
+.preview { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); text-align: center; }
+.qrbox { display: flex; justify-content: center; align-items: center; min-height: 300px; border: 1px dashed var(--border); border-radius: 12px; padding: 14px; background: var(--bg); }
+canvas { width: 100%; max-width: 300px; height: auto; image-rendering: pixelated; display: block; border-radius: 4px; }
+.empty { color: var(--muted); font-size: .9rem; }
+.meta { color: var(--muted); font-size: .82rem; margin: 10px 0 14px; }
+button.primary {
+  width: 100%; padding: 12px 16px; font: inherit; font-weight: 600; cursor: pointer;
+  background: var(--accent); color: var(--accent-text); border: 0; border-radius: 10px;
+}
+button.primary:disabled { opacity: .45; cursor: not-allowed; }
+button.link { background: none; border: 0; color: var(--accent); font: inherit; cursor: pointer; padding: 0; text-decoration: underline; }
+.status { margin-top: 10px; font-size: .85rem; min-height: 1.2em; }
+.tip { font-size: .85rem; color: var(--muted); margin-top: 12px; text-align: left; }
+.rules { margin: 24px 0 0; font-size: .82rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Generador de QR estáticos</h1>
+  <p class="sub">La URL se codifica directamente en el QR: no depende de ningún servicio externo y no caduca mientras el destino siga existiendo.</p>
+
+  <div class="grid">
+    <div class="card">
+      <div class="field">
+        <span class="lbl">¿A qué apunta el QR?</span>
+        <div class="seg" id="tipoSeg">
+          <label><input type="radio" name="tipo" value="enlace" checked> Un enlace</label>
+          <label><input type="radio" name="tipo" value="imagen"> Una imagen</label>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="url" id="urlLabel">URL completa</label>
+        <input type="url" id="url" placeholder="https://ejemplo.com" autocomplete="off" spellcheck="false">
+        <div class="hint" id="urlHint">Debe empezar por https:// y no contener espacios.</div>
+      </div>
+
+      <div class="msgs" id="msgs" aria-live="polite"></div>
+
+      <div class="row">
+        <div class="field">
+          <label for="uso">Uso final</label>
+          <select id="uso">
+            <option value="pantalla">Pantalla / presentación</option>
+            <option value="impreso">Impreso pequeño</option>
+            <option value="carteleria">Cartelería grande</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="tam">Tamaño impreso (cm)</label>
+          <input type="number" id="tam" min="1" max="300" step="0.5" value="5">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <span class="lbl">Colores</span>
+          <div class="colors">
+            <input type="color" id="color" value="#000000" aria-label="Color de los módulos">
+            <span class="hint" style="margin:0">sobre</span>
+            <input type="color" id="fondo" value="#ffffff" aria-label="Color de fondo">
+          </div>
+          <div class="hint">Módulos oscuros sobre fondo claro.</div>
+        </div>
+        <div class="field">
+          <label for="error">Corrección de errores</label>
+          <select id="error">
+            <option value="L">L (7 %)</option>
+            <option value="M">M (15 %)</option>
+            <option value="Q" selected>Q (25 %) · recomendado</option>
+            <option value="H">H (30 %) · si llevará logo</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="nombre">Nombre del archivo</label>
+          <input type="text" id="nombre" placeholder="qr" value="qr" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="borde">Zona de silencio (módulos)</label>
+          <input type="number" id="borde" min="4" max="12" step="1" value="4">
+        </div>
+      </div>
+
+      <div class="field" style="margin-bottom:0">
+        <span class="lbl">Formato de salida</span>
+        <div class="seg" id="fmtSeg">
+          <label><input type="checkbox" value="png" checked> PNG <span class="hint" style="margin:0">pantalla y Rise</span></label>
+          <label><input type="checkbox" value="svg"> SVG <span class="hint" style="margin:0">vectorial</span></label>
+          <label><input type="checkbox" value="pdf"> PDF <span class="hint" style="margin:0">imprenta</span></label>
+        </div>
+        <div class="hint" id="fmtHint"></div>
+      </div>
+    </div>
+
+    <div class="card preview">
+      <div class="qrbox" id="qrbox"><span class="empty">Escribe la URL para ver el QR</span></div>
+      <div class="meta" id="meta"></div>
+      <button class="primary" id="dl" disabled>Descargar</button>
+      <div class="status" id="status" aria-live="polite"></div>
+      <div class="tip" id="tip"></div>
+    </div>
+  </div>
+
+  <p class="rules">No se usan acortadores, QR dinámicos ni servicios con cuenta. Un QR no puede contener una imagen: si el destino es una imagen, el QR apunta a la URL pública y permanente donde está alojada.</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var SHORTENERS = ["bit.ly","tinyurl.com","t.co","goo.gl","is.gd","ow.ly","buff.ly","cutt.ly","rebrand.ly","shorturl.at","t.ly","rb.gy","lnkd.in","wa.me"];
+  var TEMP_HOSTS = [
+    ["drive.google.com","Google Drive"],["docs.google.com","Google Drive"],["dropbox.com","Dropbox"],
+    ["wetransfer.com","WeTransfer"],["we.tl","WeTransfer"],["onedrive.live.com","OneDrive"],["1drv.ms","OneDrive"],
+    ["sharepoint.com","SharePoint/OneDrive"],["canva.com","Canva"],["instagram.com","Instagram"],
+    ["facebook.com","Facebook"],["fb.com","Facebook"],["twitter.com","X/Twitter"],["x.com","X/Twitter"],
+    ["tiktok.com","TikTok"],["linkedin.com","LinkedIn"]
+  ];
+  var USOS = {
+    pantalla:   { scale: 12, cm: 5,  rec: "Para pantalla basta el PNG." },
+    impreso:    { scale: 24, cm: 3,  rec: "Para imprimir, mejor SVG o PDF (no pierden calidad)." },
+    carteleria: { scale: 40, cm: 20, rec: "Para cartelería usa SVG o PDF: escalan sin límite." }
+  };
+
+  qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var el = {
+    url: $("url"), uso: $("uso"), tam: $("tam"), color: $("color"), fondo: $("fondo"),
+    error: $("error"), nombre: $("nombre"), borde: $("borde"), msgs: $("msgs"),
+    qrbox: $("qrbox"), meta: $("meta"), dl: $("dl"), status: $("status"), tip: $("tip"),
+    fmtHint: $("fmtHint"), urlHint: $("urlHint"), urlLabel: $("urlLabel")
+  };
+
+  var state = { qr: null, url: "", verified: false, downloads: undefined };
+
+  /* ---------- utilidades de color ---------- */
+  function lum(hex) {
+    var h = hex.replace("#", "");
+    if (h.length === 3) h = h.split("").map(function (c) { return c + c; }).join("");
+    var v = [0, 2, 4].map(function (i) {
+      var c = parseInt(h.substr(i, 2), 16) / 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+  }
+  function contrast(a, b) {
+    var l1 = Math.max(lum(a), lum(b)), l2 = Math.min(lum(a), lum(b));
+    return (l1 + 0.05) / (l2 + 0.05);
+  }
+  function rgb01(hex) {
+    var h = hex.replace("#", "");
+    return [0, 2, 4].map(function (i) { return (parseInt(h.substr(i, 2), 16) / 255).toFixed(4); }).join(" ");
+  }
+
+  /* ---------- validación ---------- */
+  function hostMatches(host, dom) { return host === dom || host.slice(-(dom.length + 1)) === "." + dom; }
+
+  function validate() {
+    var out = [], blocking = false;
+    var url = el.url.value.trim();
+    var add = function (type, text) { out.push({ type: type, text: text }); if (type === "err") blocking = true; };
+
+    if (!url) return { msgs: out, blocking: true, url: "", empty: true };
+
+    if (/\s/.test(el.url.value.trim())) add("err", "La URL contiene espacios. Codifícalos (%20) o corrige el enlace.");
+    else if (!/^https:\/\/\S+$/i.test(url)) add("err", "La URL debe empezar por https:// (por seguridad y para evitar avisos en el móvil).");
+    else {
+      var host = "";
+      try { host = new URL(url).hostname.toLowerCase(); } catch (e) { add("err", "La URL no es válida."); }
+      if (host) {
+        if (SHORTENERS.some(function (d) { return hostMatches(host, d); }))
+          add("err", "Es un acortador de enlaces (" + host + "). No se admiten: el QR dependería de un tercero y podría dejar de funcionar. Usa la URL final o una corta bajo tu propio dominio.");
+        TEMP_HOSTS.forEach(function (p) {
+          if (hostMatches(host, p[0])) add("warn", "Riesgo de caducidad: los enlaces de " + p[1] + " pueden cambiar, ser revocados o pedir inicio de sesión. Mejor un dominio propio, GitHub Pages o hosting estático.");
+        });
+        if (/[?&](token|expires|signature|sig|x-amz-[a-z-]+)=/i.test(url))
+          add("warn", "La URL tiene parámetros temporales (token, expires…). El QR dejará de funcionar cuando caduquen.");
+        if (url.length > 120)
+          add("warn", "URL larga (" + url.length + " caracteres): el QR será más denso y difícil de leer. Valora una más corta bajo tu propio dominio.");
+      }
+    }
+
+    var c = el.color.value, f = el.fondo.value;
+    if (lum(c) > lum(f)) add("err", "Colores invertidos (módulos más claros que el fondo). Muchos lectores no lo leen: usa módulos oscuros sobre fondo claro.");
+    else {
+      var r = contrast(c, f);
+      if (r < 4) add("warn", "Contraste bajo (" + r.toFixed(1) + ":1). Podría costar leer el QR.");
+    }
+
+    var cm = parseFloat(el.tam.value);
+    if (!(cm > 0)) add("err", "Indica un tamaño impreso válido en cm.");
+    else if (cm < 2) add("warn", "Menos de 2 × 2 cm es demasiado pequeño para leerlo con fiabilidad.");
+
+    var b = parseInt(el.borde.value, 10);
+    if (!(b >= 4)) add("err", "La zona de silencio debe ser de al menos 4 módulos.");
+
+    return { msgs: out, blocking: blocking, url: url, empty: false };
+  }
+
+  /* ---------- generación ---------- */
+  function makeQR(url, level) {
+    var qr = qrcode(0, level);
+    qr.addData(url, "Byte");
+    qr.make();
+    return qr;
+  }
+
+  function drawCanvas(qr, scale, border, dark, light) {
+    var n = qr.getModuleCount(), size = (n + border * 2) * scale;
+    var cv = document.createElement("canvas");
+    cv.width = cv.height = size;
+    var ctx = cv.getContext("2d");
+    ctx.fillStyle = light; ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = dark;
+    for (var r = 0; r < n; r++) for (var c = 0; c < n; c++)
+      if (qr.isDark(r, c)) ctx.fillRect((c + border) * scale, (r + border) * scale, scale, scale);
+    return cv;
+  }
+
+  function verify(qr, url, dark, light) {
+    var cv = drawCanvas(qr, 8, 4, dark, light);
+    var d = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height);
+    var res = jsQR(d.data, d.width, d.height, { inversionAttempts: "dontInvert" });
+    return !!res && res.data === url;
+  }
+
+  function runs(qr) {
+    var n = qr.getModuleCount(), out = [];
+    for (var r = 0; r < n; r++) {
+      var c = 0;
+      while (c < n) {
+        if (qr.isDark(r, c)) { var s = c; while (c < n && qr.isDark(r, c)) c++; out.push([r, s, c - s]); }
+        else c++;
+      }
+    }
+    return out;
+  }
+
+  function buildSVG(qr, border, dark, light, cm) {
+    var n = qr.getModuleCount(), t = n + border * 2, d = "";
+    runs(qr).forEach(function (q) { d += "M" + (q[1] + border) + " " + (q[0] + border) + "h" + q[2] + "v1h-" + q[2] + "z"; });
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + t + " " + t + '" width="' + cm + 'cm" height="' + cm + 'cm" shape-rendering="crispEdges">' +
+      '<rect width="' + t + '" height="' + t + '" fill="' + light + '"/>' +
+      '<path d="' + d + '" fill="' + dark + '"/></svg>';
+  }
+
+  function buildPDF(qr, border, dark, light, cm) {
+    var n = qr.getModuleCount(), t = n + border * 2;
+    var pts = cm / 2.54 * 72, u = pts / t, f = function (x) { return x.toFixed(3); };
+    var s = rgb01(light) + " rg\n0 0 " + f(pts) + " " + f(pts) + " re f\n" + rgb01(dark) + " rg\n";
+    runs(qr).forEach(function (q) {
+      s += f((q[1] + border) * u) + " " + f(pts - (q[0] + border + 1) * u) + " " + f(q[2] * u) + " " + f(u) + " re\n";
+    });
+    s += "f\n";
+    var objs = [
+      "<< /Type /Catalog /Pages 2 0 R >>",
+      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + f(pts) + " " + f(pts) + "] /Contents 4 0 R /Resources << >> >>",
+      "<< /Length " + s.length + " >>\nstream\n" + s + "endstream"
+    ];
+    var pdf = "%PDF-1.4\n", offs = [];
+    objs.forEach(function (o, i) { offs.push(pdf.length); pdf += (i + 1) + " 0 obj\n" + o + "\nendobj\n"; });
+    var xref = pdf.length;
+    pdf += "xref\n0 " + (objs.length + 1) + "\n0000000000 65535 f \n";
+    offs.forEach(function (o) { pdf += ("0000000000" + o).slice(-10) + " 00000 n \n"; });
+    pdf += "trailer\n<< /Size " + (objs.length + 1) + " /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF";
+    var bytes = new Uint8Array(pdf.length);
+    for (var i = 0; i < pdf.length; i++) bytes[i] = pdf.charCodeAt(i) & 255;
+    return bytes;
+  }
+
+  /* ---------- interfaz ---------- */
+  function fileBase() {
+    var n = (el.nombre.value || "qr").trim().toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
+    return n || "qr";
+  }
+  function selectedFormats() {
+    return Array.prototype.slice.call(document.querySelectorAll("#fmtSeg input:checked")).map(function (i) { return i.value; });
+  }
+
+  function renderMsgs(list, extraOk) {
+    el.msgs.textContent = "";
+    list.forEach(function (m) {
+      var d = document.createElement("div");
+      d.className = "msg " + m.type; d.textContent = m.text; el.msgs.appendChild(d);
+    });
+    if (extraOk) {
+      var o = document.createElement("div"); o.className = "msg ok"; o.textContent = extraOk; el.msgs.appendChild(o);
+    }
+  }
+
+  function update() {
+    el.status.textContent = "";
+    var v = validate();
+    state.qr = null; state.verified = false;
+    var uso = USOS[el.uso.value];
+    el.fmtHint.textContent = uso.rec;
+
+    if (v.empty) {
+      renderMsgs([]);
+      el.qrbox.textContent = "";
+      var sp = document.createElement("span"); sp.className = "empty"; sp.textContent = "Escribe la URL para ver el QR"; el.qrbox.appendChild(sp);
+      el.meta.textContent = ""; el.dl.disabled = true; return;
+    }
+
+    var hasQrBlock = v.blocking;
+    var qr = null, ok = false;
+    if (!hasQrBlock) {
+      try {
+        qr = makeQR(v.url, el.error.value);
+        ok = verify(qr, v.url, el.color.value, el.fondo.value);
+      } catch (e) {
+        v.msgs.push({ type: "err", text: "No se ha podido generar el QR: la URL es demasiado larga para este nivel de corrección. Prueba con un nivel menor o una URL más corta." });
+        hasQrBlock = true; qr = null;
+      }
+      if (qr && !ok) v.msgs.push({ type: "err", text: "Verificación fallida: el QR no devuelve la URL original. No lo uses; prueba con otros colores o nivel de corrección." });
+    }
+
+    renderMsgs(v.msgs, qr && ok ? "Verificado: el QR se lee correctamente y devuelve exactamente la URL original." : null);
+
+    if (!qr || !ok) {
+      el.qrbox.textContent = "";
+      var sp2 = document.createElement("span"); sp2.className = "empty"; sp2.textContent = "Corrige los avisos en rojo para generar el QR"; el.qrbox.appendChild(sp2);
+      el.meta.textContent = ""; el.dl.disabled = true; return;
+    }
+
+    state.qr = qr; state.url = v.url; state.verified = true;
+    var cv = drawCanvas(qr, uso.scale, parseInt(el.borde.value, 10), el.color.value, el.fondo.value);
+    el.qrbox.textContent = ""; el.qrbox.appendChild(cv);
+    var n = qr.getModuleCount();
+    el.meta.textContent = "Versión " + ((n - 17) / 4) + " · " + n + "×" + n + " módulos · corrección " + el.error.value + " · PNG " + cv.width + " px";
+    el.dl.disabled = selectedFormats().length === 0;
+  }
+
+  function onUsoChange() {
+    var u = USOS[el.uso.value];
+    el.tam.value = u.cm;
+    update();
+  }
+
+  function onTipoChange() {
+    var img = document.querySelector('input[name="tipo"]:checked').value === "imagen";
+    el.urlLabel.textContent = img ? "URL pública de la imagen" : "URL completa";
+    el.urlHint.textContent = img
+      ? "El QR no contiene la imagen: apunta a la URL donde ya está alojada de forma permanente (dominio propio, GitHub Pages, hosting estático)."
+      : "Debe empezar por https:// y no contener espacios.";
+    el.url.placeholder = img ? "https://tudominio.com/imagen.jpg" : "https://ejemplo.com";
+  }
+
+  async function getDownloads() {
+    if (state.downloads !== undefined) return state.downloads;
+    try { state.downloads = (window.claude && await window.claude.use("downloads")) || null; }
+    catch (e) { state.downloads = null; }
+    return state.downloads;
+  }
+
+  async function descargar() {
+    if (!state.qr || !state.verified) return;
+    var fmts = selectedFormats();
+    if (!fmts.length) return;
+    var dls = await getDownloads();
+    if (!dls) {
+      el.status.textContent = "La descarga no está disponible en esta vista. Abre el artefacto en claude.ai.";
+      return;
+    }
+    var qr = state.qr, border = parseInt(el.borde.value, 10), dark = el.color.value, light = el.fondo.value;
+    var cm = parseFloat(el.tam.value), base = fileBase(), uso = USOS[el.uso.value];
+    var guardados = [];
+    el.dl.disabled = true;
+    try {
+      for (var i = 0; i < fmts.length; i++) {
+        var f = fmts[i], data;
+        if (f === "png") {
+          var cv = drawCanvas(qr, uso.scale, border, dark, light);
+          data = await new Promise(function (res, rej) { cv.toBlob(function (b) { b ? res(b) : rej(new Error("png")); }, "image/png"); });
+        } else if (f === "svg") data = buildSVG(qr, border, dark, light, cm);
+        else data = buildPDF(qr, border, dark, light, cm);
+        await dls.save({ filename: base + "." + f, data: data });
+        guardados.push(f.toUpperCase());
+      }
+      el.status.textContent = "Guardado: " + guardados.join(", ") + ".";
+    } catch (e) {
+      var code = e && e.code;
+      if (guardados.length) el.status.textContent = "Guardado: " + guardados.join(", ") + ". El resto no se guardó.";
+      else if (code === "declined") el.status.textContent = "Descarga cancelada.";
+      else el.status.textContent = "No se ha podido guardar el archivo" + (code ? " (" + code + ")" : "") + ".";
+    } finally {
+      el.dl.disabled = selectedFormats().length === 0 || !state.qr;
+    }
+  }
+
+  /* ---------- eventos ---------- */
+  ["input", "change"].forEach(function (ev) {
+    [el.url, el.tam, el.color, el.fondo, el.error, el.borde].forEach(function (n) { n.addEventListener(ev, update); });
+  });
+  el.uso.addEventListener("change", onUsoChange);
+  document.querySelectorAll('input[name="tipo"]').forEach(function (r) { r.addEventListener("change", onTipoChange); });
+  document.querySelectorAll("#fmtSeg input").forEach(function (c) {
+    c.addEventListener("change", function () { el.dl.disabled = !state.qr || selectedFormats().length === 0; });
+  });
+  el.dl.addEventListener("click", descargar);
+
+  el.tip.textContent = "Consejo: tras descargar, prueba el QR con tu móvil antes de imprimirlo.";
+  if (typeof qrcode === "undefined" || typeof jsQR === "undefined") {
+    renderMsgs([{ type: "err", text: "No se han podido cargar las librerías de generación. Recarga la página." }]);
+  } else {
+    onTipoChange();
+    update();
+  }
+})();
+</script>
+</body>
+</html>
