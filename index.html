@@ -158,6 +158,15 @@ button.link { background: none; border: 0; color: var(--accent); font: inherit; 
         </div>
       </div>
 
+      <div class="field">
+        <span class="lbl">Estilo de QR</span>
+        <div class="seg" id="estiloSeg">
+          <label><input type="radio" name="estilo" value="cuadrado" checked> Cuadrado</label>
+          <label><input type="radio" name="estilo" value="redondeado"> Redondeado</label>
+        </div>
+        <div class="hint">Redondeado suaviza las esquinas exteriores de los módulos. El QR se verifica igual antes de descargarlo.</div>
+      </div>
+
       <div class="field" style="margin-bottom:0">
         <span class="lbl">Formato de salida</span>
         <div class="seg" id="fmtSeg">
@@ -285,20 +294,61 @@ button.link { background: none; border: 0; color: var(--accent); font: inherit; 
     return qr;
   }
 
-  function drawCanvas(qr, scale, border, dark, light) {
+  /* Estilo redondeado: cada módulo oscuro redondea solo las esquinas
+     exteriores (las que no tocan otro módulo oscuro), así los grupos
+     de módulos se ven como formas continuas con bordes suaves.
+     Devuelve trazados en unidades de módulo: M, L, C (bézier) y Z. */
+  var RADIO = 0.4, KAPPA = 0.5523;
+  function roundedShapes(qr, border) {
+    var n = qr.getModuleCount(), R = RADIO, K = KAPPA * R, shapes = [];
+    var dk = function (r, c) { return r >= 0 && c >= 0 && r < n && c < n && qr.isDark(r, c); };
+    for (var r = 0; r < n; r++) for (var c = 0; c < n; c++) {
+      if (!dk(r, c)) continue;
+      var up = dk(r - 1, c), dn = dk(r + 1, c), lf = dk(r, c - 1), rt = dk(r, c + 1);
+      var tl = !up && !lf, tr = !up && !rt, br = !dn && !rt, bl = !dn && !lf;
+      var x = c + border, y = r + border, p = [];
+      p.push(["M", x + (tl ? R : 0), y]);
+      p.push(["L", x + 1 - (tr ? R : 0), y]);
+      if (tr) p.push(["C", x + 1 - R + K, y, x + 1, y + R - K, x + 1, y + R]);
+      p.push(["L", x + 1, y + 1 - (br ? R : 0)]);
+      if (br) p.push(["C", x + 1, y + 1 - R + K, x + 1 - R + K, y + 1, x + 1 - R, y + 1]);
+      p.push(["L", x + (bl ? R : 0), y + 1]);
+      if (bl) p.push(["C", x + R - K, y + 1, x, y + 1 - R + K, x, y + 1 - R]);
+      p.push(["L", x, y + (tl ? R : 0)]);
+      if (tl) p.push(["C", x, y + R - K, x + R - K, y, x + R, y]);
+      p.push(["Z"]);
+      shapes.push(p);
+    }
+    return shapes;
+  }
+
+  function drawCanvas(qr, scale, border, dark, light, estilo) {
     var n = qr.getModuleCount(), size = (n + border * 2) * scale;
     var cv = document.createElement("canvas");
     cv.width = cv.height = size;
     var ctx = cv.getContext("2d");
     ctx.fillStyle = light; ctx.fillRect(0, 0, size, size);
     ctx.fillStyle = dark;
+    if (estilo === "redondeado") {
+      ctx.beginPath();
+      roundedShapes(qr, border).forEach(function (p) {
+        p.forEach(function (o) {
+          if (o[0] === "M") ctx.moveTo(o[1] * scale, o[2] * scale);
+          else if (o[0] === "L") ctx.lineTo(o[1] * scale, o[2] * scale);
+          else if (o[0] === "C") ctx.bezierCurveTo(o[1] * scale, o[2] * scale, o[3] * scale, o[4] * scale, o[5] * scale, o[6] * scale);
+          else ctx.closePath();
+        });
+      });
+      ctx.fill();
+      return cv;
+    }
     for (var r = 0; r < n; r++) for (var c = 0; c < n; c++)
       if (qr.isDark(r, c)) ctx.fillRect((c + border) * scale, (r + border) * scale, scale, scale);
     return cv;
   }
 
-  function verify(qr, url, dark, light) {
-    var cv = drawCanvas(qr, 8, 4, dark, light);
+  function verify(qr, url, dark, light, estilo) {
+    var cv = drawCanvas(qr, 8, 4, dark, light, estilo);
     var d = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height);
     var res = jsQR(d.data, d.width, d.height, { inversionAttempts: "dontInvert" });
     return !!res && res.data === url;
@@ -316,22 +366,43 @@ button.link { background: none; border: 0; color: var(--accent); font: inherit; 
     return out;
   }
 
-  function buildSVG(qr, border, dark, light, cm) {
+  function num(v) { return String(+v.toFixed(4)); }
+
+  function buildSVG(qr, border, dark, light, cm, estilo) {
     var n = qr.getModuleCount(), t = n + border * 2, d = "";
-    runs(qr).forEach(function (q) { d += "M" + (q[1] + border) + " " + (q[0] + border) + "h" + q[2] + "v1h-" + q[2] + "z"; });
+    if (estilo === "redondeado") {
+      roundedShapes(qr, border).forEach(function (p) {
+        p.forEach(function (o) { d += o[0] + o.slice(1).map(num).join(" "); });
+      });
+    } else {
+      runs(qr).forEach(function (q) { d += "M" + (q[1] + border) + " " + (q[0] + border) + "h" + q[2] + "v1h-" + q[2] + "z"; });
+    }
+    var render = estilo === "redondeado" ? "geometricPrecision" : "crispEdges";
     return '<?xml version="1.0" encoding="UTF-8"?>\n' +
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + t + " " + t + '" width="' + cm + 'cm" height="' + cm + 'cm" shape-rendering="crispEdges">' +
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + t + " " + t + '" width="' + cm + 'cm" height="' + cm + 'cm" shape-rendering="' + render + '">' +
       '<rect width="' + t + '" height="' + t + '" fill="' + light + '"/>' +
       '<path d="' + d + '" fill="' + dark + '"/></svg>';
   }
 
-  function buildPDF(qr, border, dark, light, cm) {
+  function buildPDF(qr, border, dark, light, cm, estilo) {
     var n = qr.getModuleCount(), t = n + border * 2;
     var pts = cm / 2.54 * 72, u = pts / t, f = function (x) { return x.toFixed(3); };
     var s = rgb01(light) + " rg\n0 0 " + f(pts) + " " + f(pts) + " re f\n" + rgb01(dark) + " rg\n";
-    runs(qr).forEach(function (q) {
-      s += f((q[1] + border) * u) + " " + f(pts - (q[0] + border + 1) * u) + " " + f(q[2] * u) + " " + f(u) + " re\n";
-    });
+    if (estilo === "redondeado") {
+      var X = function (v) { return f(v * u); }, Y = function (v) { return f(pts - v * u); };
+      roundedShapes(qr, border).forEach(function (p) {
+        p.forEach(function (o) {
+          if (o[0] === "M") s += X(o[1]) + " " + Y(o[2]) + " m\n";
+          else if (o[0] === "L") s += X(o[1]) + " " + Y(o[2]) + " l\n";
+          else if (o[0] === "C") s += X(o[1]) + " " + Y(o[2]) + " " + X(o[3]) + " " + Y(o[4]) + " " + X(o[5]) + " " + Y(o[6]) + " c\n";
+          else s += "h\n";
+        });
+      });
+    } else {
+      runs(qr).forEach(function (q) {
+        s += f((q[1] + border) * u) + " " + f(pts - (q[0] + border + 1) * u) + " " + f(q[2] * u) + " " + f(u) + " re\n";
+      });
+    }
     s += "f\n";
     var objs = [
       "<< /Type /Catalog /Pages 2 0 R >>",
@@ -356,6 +427,10 @@ button.link { background: none; border: 0; color: var(--accent); font: inherit; 
       .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
     return n || "qr";
+  }
+  function estilo() {
+    var s = document.querySelector('input[name="estilo"]:checked');
+    return s ? s.value : "cuadrado";
   }
   function selectedFormats() {
     return Array.prototype.slice.call(document.querySelectorAll("#fmtSeg input:checked")).map(function (i) { return i.value; });
@@ -391,7 +466,7 @@ button.link { background: none; border: 0; color: var(--accent); font: inherit; 
     if (!hasQrBlock) {
       try {
         qr = makeQR(v.url, el.error.value);
-        ok = verify(qr, v.url, el.color.value, el.fondo.value);
+        ok = verify(qr, v.url, el.color.value, el.fondo.value, estilo());
       } catch (e) {
         v.msgs.push({ type: "err", text: "No se ha podido generar el QR: la URL es demasiado larga para este nivel de corrección. Prueba con un nivel menor o una URL más corta." });
         hasQrBlock = true; qr = null;
@@ -408,10 +483,10 @@ button.link { background: none; border: 0; color: var(--accent); font: inherit; 
     }
 
     state.qr = qr; state.url = v.url; state.verified = true;
-    var cv = drawCanvas(qr, uso.scale, parseInt(el.borde.value, 10), el.color.value, el.fondo.value);
+    var cv = drawCanvas(qr, uso.scale, parseInt(el.borde.value, 10), el.color.value, el.fondo.value, estilo());
     el.qrbox.textContent = ""; el.qrbox.appendChild(cv);
     var n = qr.getModuleCount();
-    el.meta.textContent = "Versión " + ((n - 17) / 4) + " · " + n + "×" + n + " módulos · corrección " + el.error.value + " · PNG " + cv.width + " px";
+    el.meta.textContent = "Versión " + ((n - 17) / 4) + " · " + n + "×" + n + " módulos · corrección " + el.error.value + " · " + (estilo() === "redondeado" ? "redondeado" : "cuadrado") + " · PNG " + cv.width + " px";
     el.dl.disabled = selectedFormats().length === 0;
   }
 
@@ -460,17 +535,17 @@ button.link { background: none; border: 0; color: var(--accent); font: inherit; 
     if (!fmts.length) return;
     var dls = (await getDownloads()) || browserDownloads;
     var qr = state.qr, border = parseInt(el.borde.value, 10), dark = el.color.value, light = el.fondo.value;
-    var cm = parseFloat(el.tam.value), base = fileBase(), uso = USOS[el.uso.value];
+    var cm = parseFloat(el.tam.value), base = fileBase(), uso = USOS[el.uso.value], est = estilo();
     var guardados = [];
     el.dl.disabled = true;
     try {
       for (var i = 0; i < fmts.length; i++) {
         var f = fmts[i], data;
         if (f === "png") {
-          var cv = drawCanvas(qr, uso.scale, border, dark, light);
+          var cv = drawCanvas(qr, uso.scale, border, dark, light, est);
           data = await new Promise(function (res, rej) { cv.toBlob(function (b) { b ? res(b) : rej(new Error("png")); }, "image/png"); });
-        } else if (f === "svg") data = buildSVG(qr, border, dark, light, cm);
-        else data = buildPDF(qr, border, dark, light, cm);
+        } else if (f === "svg") data = buildSVG(qr, border, dark, light, cm, est);
+        else data = buildPDF(qr, border, dark, light, cm, est);
         await dls.save({ filename: base + "." + f, data: data });
         guardados.push(f.toUpperCase());
       }
@@ -491,6 +566,7 @@ button.link { background: none; border: 0; color: var(--accent); font: inherit; 
   });
   el.uso.addEventListener("change", onUsoChange);
   document.querySelectorAll('input[name="tipo"]').forEach(function (r) { r.addEventListener("change", onTipoChange); });
+  document.querySelectorAll('input[name="estilo"]').forEach(function (r) { r.addEventListener("change", update); });
   document.querySelectorAll("#fmtSeg input").forEach(function (c) {
     c.addEventListener("change", function () { el.dl.disabled = !state.qr || selectedFormats().length === 0; });
   });
