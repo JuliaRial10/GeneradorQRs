@@ -115,9 +115,9 @@ button.link { background: none; border: 0; color: var(--accent); font: inherit; 
         <div class="field">
           <label for="uso">Uso final</label>
           <select id="uso">
-            <option value="pantalla">Pantalla / presentación</option>
-            <option value="impreso">Impreso pequeño</option>
-            <option value="carteleria">Cartelería grande</option>
+            <option value="formativa">Experiencia formativa</option>
+            <option value="papeleria">Papelería impresa</option>
+            <option value="web">Web</option>
           </select>
         </div>
         <div class="field">
@@ -196,9 +196,9 @@ button.link { background: none; border: 0; color: var(--accent); font: inherit; 
     ["tiktok.com","TikTok"],["linkedin.com","LinkedIn"]
   ];
   var USOS = {
-    pantalla:   { scale: 12, cm: 5,  rec: "Para pantalla basta el PNG." },
-    impreso:    { scale: 24, cm: 3,  rec: "Para imprimir, mejor SVG o PDF (no pierden calidad)." },
-    carteleria: { scale: 40, cm: 20, rec: "Para cartelería usa SVG o PDF: escalan sin límite." }
+    formativa: { scale: 12, cm: 5, rec: "Para cursos (Rise, SCORM, presentaciones) basta el PNG." },
+    papeleria: { scale: 24, cm: 3, rec: "Para papelería impresa, mejor SVG o PDF (no pierden calidad)." },
+    web:       { scale: 12, cm: 5, rec: "Para web, PNG o SVG (el SVG se ve nítido en cualquier pantalla)." }
   };
 
   qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"];
